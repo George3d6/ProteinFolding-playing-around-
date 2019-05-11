@@ -1,5 +1,6 @@
 using Bio.Structure: coords, downloadpdb, PDB, read, resname, atoms, resnumber, serial, standardselector, AminoAcidSequence, inscode, atomname
 using Flux
+using Flux: @epochs
 using Statistics
 
 function get_protein_names()
@@ -26,7 +27,7 @@ function main()
     for protein_name in get_protein_names()
         protein = read("protein_data/$protein_name.pdb", PDB)
 
-        locations_arr = zeros(Int32, output_length)
+        locations_arr = zeros(Float32, output_length)
         atoms_arr = zeros(Int32, UInt32(output_length/3))
 
         for residue in protein["A"]
@@ -34,9 +35,9 @@ function main()
             for atom in atoms(residue)
                 location = coords(atom[2])
                 index = serial(atom[2])
-                locations_arr[index*3 - 2] = Int32(round(location[1] * 10^3))
-                locations_arr[index*3 - 1] = Int32(round(location[2] * 10^3))
-                locations_arr[index*3] = Int32(round(location[3] * 10^3))
+                locations_arr[index*3 - 2] = location[1] * 10^-2
+                locations_arr[index*3 - 1] = location[2] * 10^-2
+                locations_arr[index*3] = location[3] * 10^-2
 
                 atom_name = atomname(atom[2])
                 atom_index = get(atom_dict, atom_name, false)
@@ -50,23 +51,36 @@ function main()
         end
         seq = AminoAcidSequence(protein["A"], standardselector)
 
+        '''
         model = Chain(
-          Dense(UInt32(output_length/3), 768, σ),
-          LSTM(768, 256),
-          Dense(256, output_length),
+          Dense(UInt32(output_length/3), UInt32(output_length), σ),
+          LSTM(UInt32(output_length), UInt32(output_length)),
+          Dense(UInt32(output_length), UInt32(output_length)),
           softmax)
+         '''
 
-        loss(x, y) = Flux.crossentropy(model(x), y)
-        accuracy(x, y) = mean(x .== y)
+        model = Chain(
+            Dense(UInt32(output_length/3), UInt32(output_length), σ),
+            Dense(UInt32(output_length), UInt32(output_length)),
+            Dense(UInt32(output_length), UInt32(output_length)),
+            softmax)
+
+        function loss(x, y)
+            Flux.reset!(model)
+            Flux.mse(model(x), y)
+        end
+
+        accuracy(y, y_test) = mean(isapprox.(y, y_test))
+
+        atoms_arr = Tracker.data(atoms_arr)
+        locations_arr = Tracker.data(locations_arr)
 
         dataset = [(atoms_arr, locations_arr)]
 
-        for i in 1:10
-            Flux.train!(loss, params(model), dataset, ADAM())
-        end
+        @epochs 50 Flux.train!(loss, params(model), dataset, ADAM())
 
         predictions = model(atoms_arr)
-        
+
         println(predictions)
         println(locations_arr)
 
