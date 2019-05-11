@@ -1,6 +1,6 @@
 using Bio.Structure: coords, downloadpdb, PDB, read, resname, atoms, resnumber, serial, standardselector, AminoAcidSequence, inscode, atomname
 using Flux
-using Base.Iterators: repeated
+using Statistics
 
 function get_protein_names()
     ["1EN2"]
@@ -22,11 +22,11 @@ function main()
     last_atom_index = 0
 
     download_proteins()
-    output_length = 15000
+    output_length = 2601
     for protein_name in get_protein_names()
         protein = read("protein_data/$protein_name.pdb", PDB)
 
-        locations_arr = zeros(Float32, output_length)
+        locations_arr = zeros(Int32, output_length)
         atoms_arr = zeros(Int32, UInt32(output_length/3))
 
         for residue in protein["A"]
@@ -34,9 +34,9 @@ function main()
             for atom in atoms(residue)
                 location = coords(atom[2])
                 index = serial(atom[2])
-                locations_arr[index*3 - 2] = location[1]
-                locations_arr[index*3 - 1] = location[2]
-                locations_arr[index*3] = location[3]
+                locations_arr[index*3 - 2] = Int32(round(location[1] * 10^3))
+                locations_arr[index*3 - 1] = Int32(round(location[2] * 10^3))
+                locations_arr[index*3] = Int32(round(location[3] * 10^3))
 
                 atom_name = atomname(atom[2])
                 atom_index = get(atom_dict, atom_name, false)
@@ -58,15 +58,19 @@ function main()
 
         loss(x, y) = Flux.crossentropy(model(x), y)
         accuracy(x, y) = mean(x .== y)
-        #dataset = repeated([(atoms_arr, locations_arr)], 2)
+
         dataset = [(atoms_arr, locations_arr)]
 
-        x = rand(784)
-        y = rand(10)
-        data = [(x, y)]
+        for i in 1:10
+            Flux.train!(loss, params(model), dataset, ADAM())
+        end
 
-        Flux.train!(loss, params(model), dataset, ADAM())
+        predictions = model(atoms_arr)
+        
+        println(predictions)
+        println(locations_arr)
 
-
+        acc = accuracy(predictions, locations_arr)
+        println(acc)
     end
 end
