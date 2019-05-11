@@ -75,7 +75,7 @@ function main()
         atoms_arr = Tracker.data(atoms_arr)
         locations_arr = Tracker.data(locations_arr)
 
-        dataset = [(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr)]
+        dataset = [(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr)]
 
         @epochs 30 Flux.train!(loss, params(model), dataset, ADAM())
 
