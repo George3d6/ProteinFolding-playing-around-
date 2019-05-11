@@ -51,19 +51,19 @@ function main()
         end
         seq = AminoAcidSequence(protein["A"], standardselector)
 
-        '''
+
         model = Chain(
           Dense(UInt32(output_length/3), UInt32(output_length), σ),
           LSTM(UInt32(output_length), UInt32(output_length)),
           Dense(UInt32(output_length), UInt32(output_length)),
           softmax)
          '''
-
         model = Chain(
             Dense(UInt32(output_length/3), UInt32(output_length), σ),
             Dense(UInt32(output_length), UInt32(output_length)),
             Dense(UInt32(output_length), UInt32(output_length)),
             softmax)
+        '''
 
         function loss(x, y)
             Flux.reset!(model)
@@ -75,9 +75,9 @@ function main()
         atoms_arr = Tracker.data(atoms_arr)
         locations_arr = Tracker.data(locations_arr)
 
-        dataset = [(atoms_arr, locations_arr)]
+        dataset = [(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr)]
 
-        @epochs 50 Flux.train!(loss, params(model), dataset, ADAM())
+        @epochs 30 Flux.train!(loss, params(model), dataset, ADAM())
 
         predictions = model(atoms_arr)
 
