@@ -1,16 +1,23 @@
-using Bio.Structure: coords, downloadpdb, PDB, read, resname, atoms, resnumber, serial, standardselector, AminoAcidSequence, inscode, atomname
+using Bio.Structure: structure, coords, downloadpdb, PDB, read, resname, atoms, resnumber, serial, standardselector, AminoAcidSequence, inscode, atomname, cbetaselector, collectatoms,ContactMap
+using Bio.Structure
 using Flux
 using Flux: @epochs
 using Statistics
+using Plots: plot, display
+
+
+include("resnet.jl")
 
 function get_protein_names()
-    ["1EN2"]
+    #["1CNL"]
+    map((x) -> "1CNL", zeros(1))
 end
 
 function download_proteins()
     protein_dataset = get_protein_names()
     for protein_name in protein_dataset
         if !isfile("protein_data/$protein_name.pdb")
+            println("Downloading protein: $protein_name !")
             downloadpdb(protein_name, pdb_dir="protein_data")
         end
     end
@@ -27,6 +34,98 @@ function main()
     last_residue_index = 0
 
     download_proteins()
+
+    a_model_residue_onehot_names_arr = []
+    a_model_residue_distances_arr = []
+
+    min_distance = 10^62
+    max_distance = -10^62
+
+    for protein_name in get_protein_names()
+        protein = read("protein_data/$protein_name.pdb", PDB)
+
+        a_model_residue_names = []
+        a_model_residue_distances = []
+
+        contacts = ContactMap(collectatoms(protein["A"], cbetaselector), 8.0)
+        contact_data = contacts.data
+        #display(plot(contacts))
+
+        '''
+        for i in 1:length(protein["A"]) - 1
+            push!(a_model_residue_names, String(resname(protein["A"][i])))
+            if i > 1
+                distance = BioStructures.distance(protein["A"][i-1],protein["A"][i])
+                push!(a_model_residue_distances, distance)
+                if distance < min_distance
+                    min_distance = distance
+                end
+                if distance > max_distance
+                    max_distance = distance
+                end
+            end
+        end
+        '''
+
+        onehot_names = Flux.onehotbatch(a_model_residue_names,a_model_residue_names)
+        onehot_names_normal = []
+        for b in onehot_names
+            push!(onehot_names_normal, b)
+        end
+
+        push!(a_model_residue_onehot_names_arr, onehot_names_normal)
+        push!(a_model_residue_distances_arr, a_model_residue_distances)
+    end
+
+    normalized_a_model_residue_distances_arr = map((x) -> (x .- min_distance) ./ (max_distance - min_distance), a_model_residue_distances_arr)
+
+    max_in_len = length(a_model_residue_onehot_names_arr[1])
+    max_out_len = length(normalized_a_model_residue_distances_arr[1])
+    println(max_in_len)
+    println(max_out_len)
+
+
+    model = Flux.Chain(
+        Dense(max_in_len,max_in_len),
+        Dense(max_in_len,max_in_len),
+        LSTM(max_in_len, UInt32(max_in_len/2)),
+        LSTM( UInt32(max_in_len/2),  UInt32(max_in_len/2)),
+        Dense( UInt32(max_in_len/2),max_out_len),
+        softmax
+    )
+
+    function loss(x, y)
+        Flux.reset!(model)
+        Flux.mse(model(x), y)
+    end
+
+    function single_ele_acc(y1, y2)
+        diff = abs(y1 - y2)
+        if diff > 0.1
+            return 0
+        else
+            return (1 - abs(y1 - y2)) ^ 100
+        end
+    end
+
+    accuracy(y, y_test) = mean(single_ele_acc.(y,y_test))
+
+    a_model_residue_onehot_names_arr = Tracker.data(a_model_residue_onehot_names_arr)
+    normalized_a_model_residue_distances_arr = Tracker.data(normalized_a_model_residue_distances_arr)
+
+    dataset = zip(a_model_residue_onehot_names_arr, normalized_a_model_residue_distances_arr)
+
+    @epochs 12 Flux.train!(loss, params(model), dataset, ADAM())
+
+    predictions = model(a_model_residue_onehot_names_arr[1])
+    acc = accuracy(predictions, normalized_a_model_residue_distances_arr[1])
+
+    println(predictions)
+    println(normalized_a_model_residue_distances_arr[1])
+    println(acc)
+
+    return
+
     output_length = 2460
     for protein_name in get_protein_names()
         protein = read("protein_data/$protein_name.pdb", PDB)
@@ -67,44 +166,5 @@ function main()
             end
             index_seq[index] = residue_index
         end
-
-
-        model = Chain(
-          Dense(UInt32(length(index_seq)), UInt32(output_length/6), σ),
-          LSTM(UInt32(output_length/6), UInt32(output_length/12)),
-          LSTM(UInt32(output_length/12), UInt32(output_length/6)),
-          Dense(UInt32(output_length/6), UInt32(output_length)),
-          softmax)
-        '''
-        model = Chain(
-            Dense(UInt32(length(index_seq)), UInt32(output_length/1.5), σ),
-            Dense(UInt32(output_length/1.5), UInt32(output_length)),
-            Dense(UInt32(output_length), UInt32(output_length*2)),
-            Dense(UInt32(output_length*2), UInt32(output_length*3)),
-            Dense(UInt32(output_length*3), UInt32(output_length*2)),
-            Dense(UInt32(output_length*2), UInt32(output_length)),
-            softmax)
-        '''
-
-        function loss(x, y)
-            Flux.reset!(model)
-            Flux.mse(model(x), y)
-        end
-
-        accuracy(y, y_test) = mean(isapprox.(y, y_test))
-
-        atoms_arr = Tracker.data(index_seq)
-        locations_arr = Tracker.data(locations_arr)
-
-        dataset = [(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr),(atoms_arr, locations_arr)]
-
-        @epochs 30 Flux.train!(loss, params(model), dataset, ADAM())
-
-        predictions = model(atoms_arr)
-
-        println(index_seq)
-
-        acc = accuracy(predictions, locations_arr)
-        println(acc)
     end
 end
