@@ -10,7 +10,7 @@ include("resnet.jl")
 
 function get_protein_names()
     #["1CNL"]
-    map((x) -> "1CNL", zeros(1))
+    map((x) -> "1CNL", zeros(10))
 end
 
 function download_proteins()
@@ -23,6 +23,11 @@ function download_proteins()
     end
 end
 
+function oh_encode_residues(residues_arr)
+    unique_residue_names = [Set(collect(Iterators.flatten(residues_arr)))...]
+    encoded_residues_arr = map((x) -> Flux.onehotbatch(x,unique_residue_names),residues_arr)
+    return encoded_residues_arr
+end
 
 function main()
     atom_dict = Dict{String,Int32}()
@@ -35,8 +40,8 @@ function main()
 
     download_proteins()
 
-    a_model_residue_onehot_names_arr = []
-    a_model_residue_distances_arr = []
+    residues_arr = []
+    contacts_arr = []
 
     min_distance = 10^62
     max_distance = -10^62
@@ -44,14 +49,13 @@ function main()
     for protein_name in get_protein_names()
         protein = read("protein_data/$protein_name.pdb", PDB)
 
-        a_model_residue_names = []
-        a_model_residue_distances = []
-
+        residues = map((x) -> String(resname(x)), protein["A"])
+        push!(residues_arr, residues)
         contacts = ContactMap(collectatoms(protein["A"], cbetaselector), 8.0)
         contact_data = contacts.data
-        #display(plot(contacts))
+        push!(contacts_arr, contact_data)
 
-        '''
+        """
         for i in 1:length(protein["A"]) - 1
             push!(a_model_residue_names, String(resname(protein["A"][i])))
             if i > 1
@@ -65,32 +69,24 @@ function main()
                 end
             end
         end
-        '''
-
-        onehot_names = Flux.onehotbatch(a_model_residue_names,a_model_residue_names)
-        onehot_names_normal = []
-        for b in onehot_names
-            push!(onehot_names_normal, b)
-        end
-
-        push!(a_model_residue_onehot_names_arr, onehot_names_normal)
-        push!(a_model_residue_distances_arr, a_model_residue_distances)
+        """
     end
 
-    normalized_a_model_residue_distances_arr = map((x) -> (x .- min_distance) ./ (max_distance - min_distance), a_model_residue_distances_arr)
+    e_residues_arr = oh_encode_residues(residues_arr)
 
-    max_in_len = length(a_model_residue_onehot_names_arr[1])
-    max_out_len = length(normalized_a_model_residue_distances_arr[1])
-    println(max_in_len)
-    println(max_out_len)
+    e_residues_arr = map((x) -> cat(dims=4,x),e_residues_arr)
+    #contacts_arr =  map((x) -> [x...],contacts_arr)
 
+    max_in_len = length(e_residues_arr[1])
+    max_out_len = length(contacts_arr[1])
+
+    println("Maximum input size is: $max_in_len !\nMaximum output size is: $max_out_len !")
 
     model = Flux.Chain(
         Dense(max_in_len,max_in_len),
+        Dense(max_in_len,max_in_len/2),
         Dense(max_in_len,max_in_len),
-        LSTM(max_in_len, UInt32(max_in_len/2)),
-        LSTM( UInt32(max_in_len/2),  UInt32(max_in_len/2)),
-        Dense( UInt32(max_in_len/2),max_out_len),
+        Dense(max_in_len,max_out_len),
         softmax
     )
 
@@ -99,6 +95,7 @@ function main()
         Flux.mse(model(x), y)
     end
 
+    """
     function single_ele_acc(y1, y2)
         diff = abs(y1 - y2)
         if diff > 0.1
@@ -107,22 +104,30 @@ function main()
             return (1 - abs(y1 - y2)) ^ 100
         end
     end
+    """
+
+    single_ele_acc(y1, y2) = UInt32(y1 == y2)
 
     accuracy(y, y_test) = mean(single_ele_acc.(y,y_test))
 
-    a_model_residue_onehot_names_arr = Tracker.data(a_model_residue_onehot_names_arr)
-    normalized_a_model_residue_distances_arr = Tracker.data(normalized_a_model_residue_distances_arr)
+    #normalized_a_model_residue_distances_arr = Tracker.data(normalized_a_model_residue_distances_arr)
+    dataset = zip(e_residues_arr, contacts_arr)
 
-    dataset = zip(a_model_residue_onehot_names_arr, normalized_a_model_residue_distances_arr)
+    @epochs 2 Flux.train!(loss, params(model), dataset, ADAM())
 
-    @epochs 12 Flux.train!(loss, params(model), dataset, ADAM())
+    predictions = model(e_residues_arr[1])
+    function n_to_bool(x)
+        println(x)
+        if x < 0.5
+            return false
+        end
+            return true
+    end
+    predictions = map(n_to_bool, predictions)
+    acc = accuracy(predictions, contacts_arr[1])
 
-    predictions = model(a_model_residue_onehot_names_arr[1])
-    acc = accuracy(predictions, normalized_a_model_residue_distances_arr[1])
-
-    println(predictions)
-    println(normalized_a_model_residue_distances_arr[1])
     println(acc)
+
 
     return
 
